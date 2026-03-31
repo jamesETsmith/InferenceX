@@ -4,8 +4,8 @@ Usage:
     python plot_comparison.py <mi350x_csv> <mi355x_csv> [-o output_dir]
 
 Generates two plots:
-  1. Throughput/GPU vs Mean E2E Latency
-  2. Throughput/GPU vs Median Interactivity
+  1. Mean E2E Latency vs Throughput/GPU
+  2. Median Interactivity vs Throughput/GPU
 """
 
 import argparse
@@ -17,9 +17,12 @@ try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import seaborn as sns
 except ImportError:
-    print("matplotlib is required: pip install matplotlib", file=sys.stderr)
+    print("matplotlib and seaborn are required: pip install matplotlib seaborn", file=sys.stderr)
     sys.exit(1)
+
+sns.set_theme(context="talk", style="whitegrid")
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:
@@ -37,8 +40,8 @@ def make_label(hw: str, isl: str, osl: str) -> str:
     return f"{hw.upper()} ({isl}/{osl})"
 
 
-def plot_throughput_vs_e2e(mi350x: list[dict], mi355x: list[dict], output: Path) -> None:
-    fig, ax = plt.subplots(figsize=(9, 6))
+def plot_e2e_vs_throughput(mi350x: list[dict], mi355x: list[dict], output: Path) -> None:
+    fig, ax = plt.subplots(figsize=(10, 7))
 
     for data, color, marker in [(mi350x, "#e74c3c", "o"), (mi355x, "#2980b9", "s")]:
         tput = [float(r["Throughput/GPU (tok/s)"]) for r in data]
@@ -46,24 +49,24 @@ def plot_throughput_vs_e2e(mi350x: list[dict], mi355x: list[dict], output: Path)
         concs = [int(r["Concurrency"]) for r in data]
         label = make_label(data[0]["Hardware"], data[0]["ISL"], data[0]["OSL"])
 
-        ax.plot(tput, e2e, color=color, marker=marker, linewidth=2, markersize=8, label=label, zorder=3)
-        for t, e, c in zip(tput, e2e, concs):
-            ax.annotate(f"c={c}", (t, e), textcoords="offset points", xytext=(6, 6),
-                        fontsize=8, color=color)
+        ax.plot(e2e, tput, color=color, marker=marker, linewidth=2, markersize=9, label=label, zorder=3)
+        for e, t, c in zip(e2e, tput, concs):
+            ax.annotate(f"c={c}", (e, t), textcoords="offset points", xytext=(0, 14),
+                        fontsize=13, color=color, ha="center")
 
-    ax.set_xlabel("Throughput / GPU (tok/s)", fontsize=12)
-    ax.set_ylabel("Mean E2E Latency (s)", fontsize=12)
-    ax.set_title("Kimi-K2.5 FP4 — Throughput vs E2E Latency (TP=8)", fontsize=13, fontweight="bold")
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("Mean E2E Latency (s)")
+    ax.set_ylabel("Throughput / GPU (tok/s)")
+    ax.set_title("Kimi-K2.5 FP4 — E2E Latency vs Throughput (TP=8)", fontweight="bold")
+    ax.legend()
+    sns.despine(ax=ax)
     fig.tight_layout()
     fig.savefig(output, dpi=150)
     plt.close(fig)
     print(f"  Saved: {output}")
 
 
-def plot_throughput_vs_interactivity(mi350x: list[dict], mi355x: list[dict], output: Path) -> None:
-    fig, ax = plt.subplots(figsize=(9, 6))
+def plot_interactivity_vs_throughput(mi350x: list[dict], mi355x: list[dict], output: Path) -> None:
+    fig, ax = plt.subplots(figsize=(10, 7))
 
     for data, color, marker in [(mi350x, "#e74c3c", "o"), (mi355x, "#2980b9", "s")]:
         tput = [float(r["Throughput/GPU (tok/s)"]) for r in data]
@@ -71,16 +74,16 @@ def plot_throughput_vs_interactivity(mi350x: list[dict], mi355x: list[dict], out
         concs = [int(r["Concurrency"]) for r in data]
         label = make_label(data[0]["Hardware"], data[0]["ISL"], data[0]["OSL"])
 
-        ax.plot(tput, intvty, color=color, marker=marker, linewidth=2, markersize=8, label=label, zorder=3)
-        for t, i, c in zip(tput, intvty, concs):
-            ax.annotate(f"c={c}", (t, i), textcoords="offset points", xytext=(6, 6),
-                        fontsize=8, color=color)
+        ax.plot(intvty, tput, color=color, marker=marker, linewidth=2, markersize=9, label=label, zorder=3)
+        for i, t, c in zip(intvty, tput, concs):
+            ax.annotate(f"c={c}", (i, t), textcoords="offset points", xytext=(0, 14),
+                        fontsize=13, color=color, ha="center")
 
-    ax.set_xlabel("Throughput / GPU (tok/s)", fontsize=12)
-    ax.set_ylabel("Median Interactivity (tok/s/user)", fontsize=12)
-    ax.set_title("Kimi-K2.5 FP4 — Throughput vs Interactivity (TP=8)", fontsize=13, fontweight="bold")
-    ax.legend(fontsize=11)
-    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("Median Interactivity (tok/s/user)")
+    ax.set_ylabel("Throughput / GPU (tok/s)")
+    ax.set_title("Kimi-K2.5 FP4 — Interactivity vs Throughput (TP=8)", fontweight="bold")
+    ax.legend()
+    sns.despine(ax=ax)
     fig.tight_layout()
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -119,8 +122,8 @@ def main() -> None:
     n355 = len(mi355x_tp8)
     print(f"  MI350X: {n350} rows | MI355X (TP=8): {n355} rows")
 
-    plot_throughput_vs_e2e(mi350x_all, mi355x_tp8, out_dir / "tput_vs_e2e_latency.png")
-    plot_throughput_vs_interactivity(mi350x_all, mi355x_tp8, out_dir / "tput_vs_interactivity.png")
+    plot_e2e_vs_throughput(mi350x_all, mi355x_tp8, out_dir / "tput_vs_e2e_latency.png")
+    plot_interactivity_vs_throughput(mi350x_all, mi355x_tp8, out_dir / "tput_vs_interactivity.png")
 
 
 if __name__ == "__main__":
