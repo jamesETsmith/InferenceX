@@ -58,6 +58,7 @@ def load_json(path: Path) -> Optional[Dict[str, Any]]:
         with open(path, 'r') as f:
             return json.load(f)
     except Exception:
+        print(f"Error loading JSON file: {path}")
         return None
 
 
@@ -69,7 +70,9 @@ def main():
     results = []
     results_dir = Path(sys.argv[1])
     for result_path in results_dir.rglob('*.json'):
+        print(f"Loading JSON file: {result_path}")
         result = load_json(result_path)
+        print(f"Result: {result}")
         if result and 'is_multinode' in result:
             results.append(result)
 
