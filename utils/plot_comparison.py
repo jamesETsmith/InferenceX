@@ -18,19 +18,28 @@ try:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import seaborn as sns
-    from adjustText import adjust_text
 except ImportError:
-    print("matplotlib, seaborn, and adjustText are required: pip install matplotlib seaborn adjustText", file=sys.stderr)
+    print("matplotlib and seaborn are required: pip install matplotlib seaborn", file=sys.stderr)
     sys.exit(1)
 
 sns.set_theme(context="talk", style="whitegrid")
 
-SERIES_STYLES = [
-    {"color": "#e74c3c", "marker": "o"},   # red circle
-    {"color": "#2980b9", "marker": "s"},   # blue square
-    {"color": "#27ae60", "marker": "D"},   # green diamond
-    {"color": "#8e44ad", "marker": "^"},   # purple triangle
-]
+# ColorBrewer "Paired" palette strategy:
+#   Hue encodes TP (orange family = TP4, blue family = TP8).
+#   Lightness/saturation encodes hardware (strong = MI350X, soft = MI355X).
+SERIES_COLORS: dict[tuple[int, str], str] = {
+    (4, "mi350x"): "#ff7f00",   # strong orange
+    (4, "mi355x"): "#fdbf6f",   # soft gold
+    (8, "mi350x"): "#1f78b4",   # strong blue
+    (8, "mi355x"): "#a6cee3",   # soft blue
+}
+COLOR_DEFAULT = "#33a02c"
+
+HW_MARKERS: dict[str, str] = {
+    "mi350x": "o",   # circle
+    "mi355x": "s",   # square
+}
+HW_MARKER_DEFAULT = "D"
 
 
 def load_csv(path: Path) -> list[dict[str, str]]:
@@ -72,27 +81,23 @@ def _build_series(
 ) -> list[tuple[list[dict], dict, str]]:
     """Build a flat list of (data, style_dict, label) tuples from grouped CSV data."""
     series = []
-    idx = 0
-    for _hw_label, tp_groups in csv_groups:
+    for hw_key, tp_groups in csv_groups:
+        marker = HW_MARKERS.get(hw_key, HW_MARKER_DEFAULT)
         for tp in sorted(tp_groups):
             data = tp_groups[tp]
-            style = SERIES_STYLES[idx % len(SERIES_STYLES)]
+            color = SERIES_COLORS.get((tp, hw_key), COLOR_DEFAULT)
+            style = {"color": color, "marker": marker, "hw": hw_key}
             label = make_label(data[0]["Hardware"], tp, data[0]["ISL"], data[0]["OSL"])
             series.append((data, style, label))
-            idx += 1
     return series
 
 
-ADJUST_TEXT_KW = dict(
-    min_arrow_len=15,
-    force_points=(2.0, 2.0),
-    force_text=(1.5, 1.5),
-    expand=(2.0, 2.0),
-    arrowprops=dict(arrowstyle="-", color="grey", lw=0.5),
-)
+# MI355X labels above the trace, MI350X labels below
+ANNOTATION_OFFSET = {"mi355x": (0, 16), "mi350x": (0, -16)}
+ANNOTATION_VA = {"mi355x": "bottom", "mi350x": "top"}
 
 
-def _pad_axes(ax: plt.Axes, pad_frac: float = 0.08) -> None:
+def _pad_axes(ax: plt.Axes, pad_frac: float = 0.10) -> None:
     """Expand axis limits by a fraction so labels near the edges have room."""
     for getter, setter in [(ax.get_xlim, ax.set_xlim), (ax.get_ylim, ax.set_ylim)]:
         lo, hi = getter()
@@ -103,20 +108,22 @@ def _pad_axes(ax: plt.Axes, pad_frac: float = 0.08) -> None:
 def plot_e2e_vs_throughput(series: list[tuple[list[dict], dict, str]], output: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    texts = []
     for data, style, label in series:
         tput = [float(r["Throughput/GPU (tok/s)"]) for r in data]
         e2e = [float(r["Mean E2E Latency (ms)"]) for r in data]
         concs = [int(r["Concurrency"]) for r in data]
+        hw = style["hw"]
+        offset = ANNOTATION_OFFSET.get(hw, (0, 16))
+        va = ANNOTATION_VA.get(hw, "bottom")
 
         ax.plot(e2e, tput, color=style["color"], marker=style["marker"],
-                linewidth=2, markersize=9, label=label, zorder=3)
+                linewidth=3, markersize=10, label=label, zorder=3)
         for e, t, c in zip(e2e, tput, concs):
-            texts.append(ax.text(e, t, f"c={c}", fontsize=11, color=style["color"],
-                                 ha="center", va="bottom"))
+            ax.annotate(f"c={c}", (e, t), textcoords="offset points", xytext=offset,
+                        fontsize=13, fontweight="bold", color=style["color"],
+                        ha="center", va=va)
 
     _pad_axes(ax)
-    adjust_text(texts, ax=ax, **ADJUST_TEXT_KW)
 
     ax.set_xlabel("Mean E2E Latency (s)")
     ax.set_ylabel("Throughput / GPU (tok/s)")
@@ -132,20 +139,22 @@ def plot_e2e_vs_throughput(series: list[tuple[list[dict], dict, str]], output: P
 def plot_interactivity_vs_throughput(series: list[tuple[list[dict], dict, str]], output: Path) -> None:
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    texts = []
     for data, style, label in series:
         tput = [float(r["Throughput/GPU (tok/s)"]) for r in data]
         intvty = [float(r["Median Interactivity (tok/s/user)"]) for r in data]
         concs = [int(r["Concurrency"]) for r in data]
+        hw = style["hw"]
+        offset = ANNOTATION_OFFSET.get(hw, (0, 16))
+        va = ANNOTATION_VA.get(hw, "bottom")
 
         ax.plot(intvty, tput, color=style["color"], marker=style["marker"],
-                linewidth=2, markersize=9, label=label, zorder=3)
+                linewidth=3, markersize=10, label=label, zorder=3)
         for i, t, c in zip(intvty, tput, concs):
-            texts.append(ax.text(i, t, f"c={c}", fontsize=11, color=style["color"],
-                                 ha="center", va="bottom"))
+            ax.annotate(f"c={c}", (i, t), textcoords="offset points", xytext=offset,
+                        fontsize=13, fontweight="bold", color=style["color"],
+                        ha="center", va=va)
 
     _pad_axes(ax)
-    adjust_text(texts, ax=ax, **ADJUST_TEXT_KW)
 
     ax.set_xlabel("Median Interactivity (tok/s/user)")
     ax.set_ylabel("Throughput / GPU (tok/s)")
