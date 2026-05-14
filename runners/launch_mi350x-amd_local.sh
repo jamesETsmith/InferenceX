@@ -16,7 +16,7 @@ set -euo pipefail
 
 IMAGE="vllm/vllm-openai-rocm:v0.18.0"
 MODEL="amd/Kimi-K2.5-MXFP4"
-TP=8
+TP=4
 ISL=8192
 OSL=1024
 MAX_MODEL_LEN=16384
